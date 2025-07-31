@@ -522,11 +522,11 @@ export default function AdminPage() {
         <div className="admin-dashboard">
             <h1 className="mb-4 text-center">Admin Dashboard</h1>
             <ul className="nav nav-tabs mb-4">
-                <li className="nav-item"><a className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`} href="#!" onClick={() => setActiveTab('dashboard')}>Dashboard</a></li>
-                <li className="nav-item"><a className={`nav-link ${activeTab === 'manageBooks' ? 'active' : ''}`} href="#!" onClick={() => setActiveTab('manageBooks')}>Books & Categories</a></li>
-                <li className="nav-item"><a className={`nav-link ${activeTab === 'manageMembers' ? 'active' : ''}`} href="#!" onClick={() => setActiveTab('manageMembers')}>Members</a></li>
-                <li className="nav-item"><a className={`nav-link ${activeTab === 'issueReturn' ? 'active' : ''}`} href="#!" onClick={() => setActiveTab('issueReturn')}>Issue/Return</a></li>
-                <li className="nav-item"><a className={`nav-link ${activeTab === 'issuedBooks' ? 'active' : ''}`} href="#!" onClick={() => setActiveTab('issuedBooks')}>Issued Books</a></li>
+                <li className="nav-item"><a className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`} href="#!" onClick={(e) => {e.preventDefault(); setActiveTab('dashboard')}}>Dashboard</a></li>
+                <li className="nav-item"><a className={`nav-link ${activeTab === 'manageBooks' ? 'active' : ''}`} href="#!" onClick={(e) => {e.preventDefault(); setActiveTab('manageBooks')}}>Books & Categories</a></li>
+                <li className="nav-item"><a className={`nav-link ${activeTab === 'manageMembers' ? 'active' : ''}`} href="#!" onClick={(e) => {e.preventDefault(); setActiveTab('manageMembers')}}>Members</a></li>
+                <li className="nav-item"><a className={`nav-link ${activeTab === 'issueReturn' ? 'active' : ''}`} href="#!" onClick={(e) => {e.preventDefault(); setActiveTab('issueReturn')}}>Issue/Return</a></li>
+                <li className="nav-item"><a className={`nav-link ${activeTab === 'issuedBooks' ? 'active' : ''}`} href="#!" onClick={(e) => {e.preventDefault(); setActiveTab('issuedBooks')}}>Issued Books</a></li>
             </ul>
             {activeTab === 'dashboard' && <Dashboard />}
             {activeTab === 'manageBooks' && <BookAndCategoryManagement />}
