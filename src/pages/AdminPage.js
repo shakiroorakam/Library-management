@@ -519,7 +519,7 @@ export default function AdminPage() {
     if (loading) return <div className="text-center mt-5"><h2>Loading Admin Data...</h2></div>;
 
     return (
-        <div>
+        <div className="admin-dashboard">
             <h1 className="mb-4 text-center">Admin Dashboard</h1>
             <ul className="nav nav-tabs mb-4">
                 <li className="nav-item"><a className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`} href="#!" onClick={() => setActiveTab('dashboard')}>Dashboard</a></li>
