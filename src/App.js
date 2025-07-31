@@ -1,7 +1,7 @@
 // --- FILE: src/App.js ---
-// This is the main application component that sets up routing.
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+// 1. Change the import here
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 
@@ -16,6 +16,7 @@ function App() {
   return (
     <AuthProvider>
       <DataProvider>
+        {/* 2. Change the component here */}
         <Router>
           <div className="d-flex flex-column" style={{minHeight: "100vh"}}>
             <Header />
@@ -31,7 +32,6 @@ function App() {
                     </ProtectedRoute>
                   } 
                 />
-                {/* Redirect any unknown paths to the new homepage */}
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
             </main>
