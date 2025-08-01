@@ -322,14 +322,14 @@ function MemberManagement() {
             const data = new Uint8Array(evt.target.result);
             const wb = XLSX.read(data, { type: 'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
-            const jsonData = XLSX.utils.sheet_to_json(ws, { header: ["name", "email"] });
-            const newMembers = jsonData.slice(1).filter(m => m.name && m.email);
+            const jsonData = XLSX.utils.sheet_to_json(ws, { header: ["name", "registerNumber", "class"] });
+            const newMembers = jsonData.slice(1).filter(m => m.name && m.registerNumber && m.class);
             if (newMembers.length > 0 && window.confirm(`Found ${newMembers.length} members. Import them?`)) {
                 addMultipleMembers(newMembers);
             }
         };
         reader.readAsArrayBuffer(file);
-        e.target.value = ''; // Reset file input
+        e.target.value = '';
     };
 
     const MemberHistory = ({ member }) => {
@@ -349,11 +349,12 @@ function MemberManagement() {
     };
 
     const EditMemberForm = ({ member, onSave, onCancel }) => {
-        const [formData, setFormData] = useState(member || { name: '', email: '' });
+        const [formData, setFormData] = useState(member || { name: '', registerNumber: '', class: '' });
         return (
             <form onSubmit={(e) => { e.preventDefault(); onSave(formData); }}>
                 <div className="mb-3"><label className="form-label">Name</label><input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="form-control" required/></div>
-                <div className="mb-3"><label className="form-label">Email</label><input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="form-control" required/></div>
+                <div className="mb-3"><label className="form-label">Register Number</label><input type="text" value={formData.registerNumber} onChange={e => setFormData({ ...formData, registerNumber: e.target.value })} className="form-control" required/></div>
+                <div className="mb-3"><label className="form-label">Class</label><input type="text" value={formData.class} onChange={e => setFormData({ ...formData, class: e.target.value })} className="form-control" required/></div>
                 <button type="submit" className="btn btn-success me-2">Save</button>
                 <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
             </form>
@@ -373,11 +374,12 @@ function MemberManagement() {
             <div className="card-body">
                 <div className="table-responsive">
                     <table className="table table-hover align-middle">
-                        <thead><tr><th>Name</th><th>Email</th><th className="text-end">Actions</th></tr></thead>
+                        <thead><tr><th>Name</th><th>Register Number</th><th>Class</th><th className="text-end">Actions</th></tr></thead>
                         <tbody>{sortedMembers.map(member => (
                             <tr key={member.id}>
-                                <td><a href="#!" onClick={(e) => { e.preventDefault(); setViewingMember(member); }}>{member.name}</a></td>
-                                <td>{member.email}</td>
+                                <td>{member.name}</td>
+                                <td>{member.registerNumber}</td>
+                                <td>{member.class}</td>
                                 <td className="text-end">
                                     <button className="btn btn-sm btn-outline-secondary me-2" onClick={() => setViewingMember(member)} title="View History"><i className="fas fa-history"></i></button>
                                     <button className="btn btn-sm btn-outline-primary me-2" onClick={() => setEditingMember(member)} title="Edit Member"><i className="fas fa-pencil-alt"></i></button>
@@ -428,7 +430,7 @@ function BookAndCategoryManagement() {
             }
         };
         reader.readAsBinaryString(file);
-        e.target.value = ''; // Reset file input
+        e.target.value = '';
     };
     
     const EditBookForm = ({ book, onSave, onCancel }) => {
@@ -502,7 +504,7 @@ function BookAndCategoryManagement() {
                         <a href="#!" onClick={(e) => { e.preventDefault(); handleSelectCategory(cat); }}>{cat}</a>
                         <div>
                             <button className="btn btn-outline-primary btn-sm me-2" onClick={() => handleSelectCategory(cat)} title="View Books"><i className="fas fa-folder-open"></i></button>
-                            <button className="btn btn-outline-danger btn-sm" onClick={() => {if(window.confirm('This will not delete books inside. Are you sure?')) deleteCategory(cat)}} title="Delete Category"><i className="fas fa-trash"></i></button>
+                            <button className="btn btn-outline-danger btn-sm" onClick={() => {if(window.confirm('WARNING: This will delete the category AND all books within it. Are you sure?')) deleteCategory(cat)}} title="Delete Category"><i className="fas fa-trash"></i></button>
                         </div>
                     </li>
                 ))}</ul>
@@ -513,8 +515,60 @@ function BookAndCategoryManagement() {
 
 // --- Main Admin Page Component ---
 export default function AdminPage() {
+    const { loading, addBook, updateBook, addMember, updateMember } = useData();
     const [activeTab, setActiveTab] = useState('dashboard');
-    const { loading } = useData();
+    const [editingMember, setEditingMember] = useState(null);
+    const [viewingMember, setViewingMember] = useState(null);
+    const [editingBook, setEditingBook] = useState(null);
+
+    const EditBookForm = ({ book, onSave, onCancel }) => {
+        const [formData, setFormData] = useState(book);
+        return (
+            <form onSubmit={e => {e.preventDefault(); onSave(formData); }}>
+                <div className="row">
+                    <div className="col-md-3 mb-3"><label className="form-label">Book No</label><input type="text" value={formData.bookNo} onChange={e => setFormData({...formData, bookNo: e.target.value})} className="form-control" required /></div>
+                    <div className="col-md-9 mb-3"><label className="form-label">Book Name</label><input type="text" value={formData.bookName} onChange={e => setFormData({...formData, bookName: e.target.value})} className="form-control" required /></div>
+                </div>
+                <div className="row">
+                    <div className="col-md-6 mb-3"><label className="form-label">Author</label><input type="text" value={formData.author} onChange={e => setFormData({...formData, author: e.target.value})} className="form-control" /></div>
+                    <div className="col-md-6 mb-3"><label className="form-label">Publisher</label><input type="text" value={formData.publisher} onChange={e => setFormData({...formData, publisher: e.target.value})} className="form-control" /></div>
+                </div>
+                <button type="submit" className="btn btn-success me-2">Save</button>
+                <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+            </form>
+        );
+    };
+
+    const EditMemberForm = ({ member, onSave, onCancel }) => {
+        const [formData, setFormData] = useState(member || { name: '', registerNumber: '', class: '' });
+        return (
+            <form onSubmit={(e) => { e.preventDefault(); onSave(formData); }}>
+                <div className="mb-3"><label className="form-label">Name</label><input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="form-control" required/></div>
+                <div className="mb-3"><label className="form-label">Register Number</label><input type="text" value={formData.registerNumber} onChange={e => setFormData({ ...formData, registerNumber: e.target.value })} className="form-control" required/></div>
+                <div className="mb-3"><label className="form-label">Class</label><input type="text" value={formData.class} onChange={e => setFormData({ ...formData, class: e.target.value })} className="form-control" required/></div>
+                <button type="submit" className="btn btn-success me-2">Save</button>
+                <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+            </form>
+        );
+    };
+
+    const MemberHistory = ({ member, books, issueHistory }) => {
+        const memberHistory = issueHistory.filter(h => h.memberId === member.id);
+        const inHandHistory = memberHistory.filter(h => h.status === 'in-hand');
+        const returnedHistory = memberHistory.filter(h => h.status === 'returned');
+        const findBookName = (bookId) => books.find(b => b.id === bookId)?.bookName || 'Unknown Book';
+        return (
+            <div>
+                <h5>Books Currently In Hand</h5>
+                {inHandHistory.length > 0 ? (<ul className="list-group mb-4">{inHandHistory.map(h => <li key={h.id} className="list-group-item"><strong>{findBookName(h.bookId)}</strong> (Due: {h.returnDate})</li>)}</ul>) : <p>No books currently in hand.</p>}
+                <hr />
+                <h5>Returned Books History</h5>
+                {returnedHistory.length > 0 ? (<ul className="list-group">{returnedHistory.map(h => <li key={h.id} className="list-group-item"><strong>{findBookName(h.bookId)}</strong> (Returned on: {h.returnedOn})</li>)}</ul>) : <p>No returned books in history.</p>}
+            </div>
+        );
+    };
+
+    const { books, issueHistory } = useData();
     
     if (loading) return <div className="text-center mt-5"><h2>Loading Admin Data...</h2></div>;
 
@@ -528,11 +582,16 @@ export default function AdminPage() {
                 <li className="nav-item"><a className={`nav-link ${activeTab === 'issueReturn' ? 'active' : ''}`} href="#!" onClick={(e) => {e.preventDefault(); setActiveTab('issueReturn')}}>Issue/Return</a></li>
                 <li className="nav-item"><a className={`nav-link ${activeTab === 'issuedBooks' ? 'active' : ''}`} href="#!" onClick={(e) => {e.preventDefault(); setActiveTab('issuedBooks')}}>Issued Books</a></li>
             </ul>
+            
             {activeTab === 'dashboard' && <Dashboard />}
-            {activeTab === 'manageBooks' && <BookAndCategoryManagement />}
-            {activeTab === 'manageMembers' && <MemberManagement />}
+            {activeTab === 'manageBooks' && <BookAndCategoryManagement onEditBook={setEditingBook} />}
+            {activeTab === 'manageMembers' && <MemberManagement onEditMember={setEditingMember} onViewHistory={setViewingMember} />}
             {activeTab === 'issueReturn' && <IssueReturn />}
             {activeTab === 'issuedBooks' && <IssuedBooks />}
+
+            {viewingMember && <Modal title={`History for ${viewingMember.name}`} onClose={() => setViewingMember(null)}><MemberHistory member={viewingMember} books={books} issueHistory={issueHistory} /></Modal>}
+            {editingMember && <Modal title={editingMember.id ? 'Edit Member' : 'Add New Member'} onClose={() => setEditingMember(null)}><EditMemberForm member={editingMember} onSave={editingMember.id ? updateMember : addMember} onCancel={() => setEditingMember(null)} /></Modal>}
+            {editingBook && <Modal title={editingBook.id ? 'Edit Book' : 'Add Book'} onClose={() => setEditingBook(null)}><EditBookForm book={editingBook} onSave={editingBook.id ? updateBook : addBook} onCancel={() => setEditingBook(null)} /></Modal>}
         </div>
     );
 }

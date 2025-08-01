@@ -28,7 +28,7 @@ export default function Header() {
         <nav className="navbar navbar-expand-lg navbar-dark" style={{ backgroundColor: 'var(--primary-color)' }}>
             <div className="container">
                 <NavLink className="navbar-brand" to="/">
-                    <i className="fas fa-book-open me-2"></i>LibraryMS
+                    <i className="fas fa-book-open me-2"></i>WIRAS Library
                     {getStatusIndicator()}
                 </NavLink>
                 <button className="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">

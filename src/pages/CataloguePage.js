@@ -38,7 +38,8 @@ export default function CataloguePage() {
 
     return (
         <div className="public-catalogue">
-            <h1 className="mb-4 text-center">Book Catalogue</h1>
+            <h1 className="mb-2 text-center">Book Catalogue</h1>
+            <p className="text-center text-muted mb-4">Browse our collection from anywhere.</p>
             <div className="row mb-4">
                 <div className="col-lg-4 mb-2">
                     <input type="text" className="form-control" placeholder="Search by name, author, book no..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
@@ -60,7 +61,7 @@ export default function CataloguePage() {
             <div className="row">
                 {filteredAndSortedBooks.length > 0 ? filteredAndSortedBooks.map(book => (
                     <div key={book.id} className="col-md-6 col-lg-4 mb-4">
-                        <div className={`card h-100 shadow-sm`}>
+                        <div className="card h-100">
                             <div className="card-body d-flex flex-column">
                                 <h5 className="card-title">{book.bookName || book.title}</h5>
                                 <h6 className="card-subtitle mb-2 text-muted">By {book.author || 'N/A'}</h6>
@@ -69,12 +70,20 @@ export default function CataloguePage() {
                                 <p className="card-text small"><strong>Category:</strong> {book.category || 'N/A'}</p>
                                 <div className="mt-auto pt-3">
                                     {book.available ? (
-                                        <div className="text-success fw-bold"><i className="fas fa-check-circle me-2"></i>Available</div>
+                                        <div className="d-flex align-items-center text-success fw-bold">
+                                            <i className="fas fa-check-circle me-2"></i>
+                                            <span>Available</span>
+                                        </div>
                                     ) : (
                                         <div className="text-warning fw-bold">
-                                            <div><i className="fas fa-times-circle me-2"></i>Issued</div>
-                                            <small className="text-muted fw-normal">To: {getMemberName(book.issuedTo)}</small><br/>
-                                            <small className="text-muted fw-normal">Return by: {book.returnDate}</small>
+                                            <div className="d-flex align-items-center">
+                                                <i className="fas fa-times-circle me-2"></i>
+                                                <span>Issued</span>
+                                            </div>
+                                            <div className="mt-1">
+                                                <small className="text-muted fw-normal">To: {getMemberName(book.issuedTo)}</small><br/>
+                                                <small className="text-muted fw-normal">Return by: {book.returnDate}</small>
+                                            </div>
                                         </div>
                                     )}
                                 </div>

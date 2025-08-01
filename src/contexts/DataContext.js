@@ -108,7 +108,6 @@ export const DataProvider = ({ children }) => {
         const issuedBook = newBooks.find(b => b.id === bookId);
         if (issuedBook) syncDoc("books", bookId, issuedBook);
 
-        // Add to history
         const historyEntry = { id: generateId(), bookId, memberId, issuedDate: issuedDateStr, returnDate: returnDateStr, status: 'in-hand', returnedOn: null };
         const newHistory = [...issueHistory, historyEntry];
         updateLocalStorageAndState('history', newHistory, setIssueHistory);
@@ -125,7 +124,6 @@ export const DataProvider = ({ children }) => {
         const returnedBook = newBooks.find(b => b.id === bookId);
         if (returnedBook) syncDoc("books", bookId, returnedBook);
 
-        // Update history
         const today = new Date().toISOString().slice(0,10);
         const newHistory = issueHistory.map(entry => 
             (entry.bookId === bookId && entry.status === 'in-hand') 
@@ -151,7 +149,6 @@ export const DataProvider = ({ children }) => {
         const reissuedBook = newBooks.find(b => b.id === bookId);
         if (reissuedBook) syncDoc("books", bookId, reissuedBook);
 
-        // Update history
         const newHistory = issueHistory.map(entry =>
             (entry.bookId === bookId && entry.status === 'in-hand')
             ? { ...entry, returnDate: newReturnDateStr }
@@ -169,9 +166,28 @@ export const DataProvider = ({ children }) => {
     };
 
     const deleteCategory = (name) => {
+        // Find all books in this category
+        const booksToDelete = books.filter(b => b.category === name);
+        // Create a new list of books excluding the ones to be deleted
+        const remainingBooks = books.filter(b => b.category !== name);
+        // Create a new list of categories excluding the one to be deleted
         const newCategories = categories.filter(c => c !== name);
+
+        // Update local state and storage
+        updateLocalStorageAndState('books', remainingBooks, setBooks);
         updateLocalStorageAndState('categories', newCategories, setCategories);
-        if (isOnline && db) setDoc(doc(db, "library", "categories"), { list: newCategories });
+
+        // Sync with Firebase
+        if (isOnline && db) {
+            const batch = writeBatch(db);
+            // Delete all the books in the category
+            booksToDelete.forEach(book => {
+                batch.delete(doc(db, "books", book.id));
+            });
+            // Update the categories document
+            batch.set(doc(db, "library", "categories"), { list: newCategories });
+            batch.commit();
+        }
     };
 
     // --- Member Functions ---
