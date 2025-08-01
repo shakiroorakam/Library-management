@@ -204,11 +204,21 @@ function IssueReturn() {
     const [selectedReturnBook, setSelectedReturnBook] = useState(null);
 
     const filteredAvailableBooks = useMemo(() => books.filter(b => b.available && (b.bookName.toLowerCase().includes(issueBookSearch.toLowerCase()) || String(b.bookNo).toLowerCase().includes(issueBookSearch.toLowerCase()))), [books, issueBookSearch]);
-    const filteredMembers = useMemo(() => members.filter(m => m.name.toLowerCase().includes(issueMemberSearch.toLowerCase())), [members, issueMemberSearch]);
+    
+    const filteredMembers = useMemo(() => members.filter(m => 
+        m.name.toLowerCase().includes(issueMemberSearch.toLowerCase()) || 
+        (m.registerNumber && m.registerNumber.toLowerCase().includes(issueMemberSearch.toLowerCase()))
+    ), [members, issueMemberSearch]);
+
     const filteredIssuedBooks = useMemo(() => books.filter(b => {
         if (b.available) return false;
         const member = members.find(m => m.id === b.issuedTo);
-        return (b.bookName.toLowerCase().includes(returnSearch.toLowerCase()) || String(b.bookNo).toLowerCase().includes(returnSearch.toLowerCase()) || (member && member.name.toLowerCase().includes(returnSearch.toLowerCase())));
+        const term = returnSearch.toLowerCase();
+        return (
+            b.bookName.toLowerCase().includes(term) || 
+            String(b.bookNo).toLowerCase().includes(term) || 
+            (member && (member.name.toLowerCase().includes(term) || (member.registerNumber && member.registerNumber.toLowerCase().includes(term))))
+        );
     }), [books, members, returnSearch]);
 
     const handleIssueSubmit = (e) => {
@@ -261,10 +271,10 @@ function IssueReturn() {
                                 </div>
                             ) : (
                                 <Autocomplete
-                                    placeholder="Search by member name..."
-                                    items={filteredMembers}
+                                    placeholder="Search by member name or reg no..."
+                                    items={filteredMembers.map(m => ({...m, display: `${m.name} (${m.registerNumber})`}))}
                                     onSelect={setSelectedMember}
-                                    displayKey="name"
+                                    displayKey="display"
                                     value={issueMemberSearch}
                                     onChange={(e) => setIssueMemberSearch(e.target.value)}
                                 />
@@ -287,7 +297,7 @@ function IssueReturn() {
                                 </div>
                             ) : (
                                 <Autocomplete
-                                    placeholder="Search by book, number, or member..."
+                                    placeholder="Search by book, member, or reg no..."
                                     items={filteredIssuedBooks.map(b => ({...b, display: `${b.bookName} (To: ${members.find(m=>m.id === b.issuedTo)?.name || 'N/A'})`}))}
                                     onSelect={setSelectedReturnBook}
                                     displayKey="display"
@@ -305,14 +315,55 @@ function IssueReturn() {
 }
 
 // --- Member Management Tab Component ---
-function MemberManagement() {
-    const { members, books, issueHistory, addMember, updateMember, deleteMember, addMultipleMembers } = useData();
-    const [viewingMember, setViewingMember] = useState(null);
-    const [editingMember, setEditingMember] = useState(null);
+function MemberManagement({ onEditMember, onViewHistory, onEditClass }) {
+    const [view, setView] = useState('classes');
+    const [selectedClass, setSelectedClass] = useState(null);
 
-    const sortedMembers = useMemo(() => 
-        [...members].sort((a, b) => a.name.localeCompare(b.name)), 
-    [members]);
+    const handleSelectClass = (className) => {
+        setSelectedClass(className);
+        setView('students');
+    };
+
+    if (view === 'students') {
+        return <StudentManagement className={selectedClass} onBack={() => setView('classes')} onEditStudent={onEditMember} />;
+    }
+
+    return <ClassManagement onSelectClass={handleSelectClass} onEditClass={onEditClass} />;
+}
+
+// --- Class Management Component ---
+function ClassManagement({ onSelectClass, onEditClass }) {
+    const { classes, deleteClass } = useData();
+    const sortedClasses = useMemo(() => [...classes].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [classes]);
+
+    return (
+        <div className="card">
+            <div className="card-header d-flex justify-content-between align-items-center">
+                <span>Manage Classes</span>
+                <button className="btn btn-primary btn-sm" onClick={() => onEditClass({ isNew: true, name: '' })}><i className="fas fa-plus me-1"></i> Add Class</button>
+            </div>
+            <div className="card-body">
+                <ul className="list-group">
+                    {sortedClasses.map(cls => (
+                        <li key={cls} className="list-group-item d-flex justify-content-between align-items-center">
+                            <span>{cls}</span>
+                            <div>
+                                <button className="btn btn-primary btn-sm me-2" onClick={() => onSelectClass(cls)} title="Add/View Students"><i className="fas fa-user-friends me-1"></i> Students</button>
+                                <button className="btn btn-info btn-sm me-2" onClick={() => onEditClass({ name: cls })} title="Edit Class"><i className="fas fa-pencil-alt"></i></button>
+                                <button className="btn btn-danger btn-sm" onClick={() => {if(window.confirm(`WARNING: This will delete the class AND all students within it. Are you sure?`)) deleteClass(cls)}} title="Delete Class"><i className="fas fa-trash"></i></button>
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+    );
+}
+
+// --- Student Management Component ---
+function StudentManagement({ className, onBack, onEditStudent }) {
+    const { members, deleteMember, addMultipleMembers } = useData();
+    const studentsInClass = useMemo(() => members.filter(m => m.class === className), [members, className]);
 
     const handleFileImport = (e) => {
         const file = e.target.files[0];
@@ -322,86 +373,54 @@ function MemberManagement() {
             const data = new Uint8Array(evt.target.result);
             const wb = XLSX.read(data, { type: 'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
-            const jsonData = XLSX.utils.sheet_to_json(ws, { header: ["name", "registerNumber", "class"] });
-            const newMembers = jsonData.slice(1).filter(m => m.name && m.registerNumber && m.class);
-            if (newMembers.length > 0 && window.confirm(`Found ${newMembers.length} members. Import them?`)) {
-                addMultipleMembers(newMembers);
+            const jsonData = XLSX.utils.sheet_to_json(ws, { header: ["name", "registerNumber"] });
+            const newStudents = jsonData.slice(1).filter(s => s.name && s.registerNumber).map(s => ({ ...s, class: className }));
+            if (newStudents.length > 0 && window.confirm(`Found ${newStudents.length} students. Import them into "${className}"?`)) {
+                addMultipleMembers(newStudents);
             }
         };
         reader.readAsArrayBuffer(file);
         e.target.value = '';
     };
 
-    const MemberHistory = ({ member }) => {
-        const memberHistory = issueHistory.filter(h => h.memberId === member.id);
-        const inHandHistory = memberHistory.filter(h => h.status === 'in-hand');
-        const returnedHistory = memberHistory.filter(h => h.status === 'returned');
-        const findBookName = (bookId) => books.find(b => b.id === bookId)?.bookName || 'Unknown Book';
-        return (
-            <div>
-                <h5>Books Currently In Hand</h5>
-                {inHandHistory.length > 0 ? (<ul className="list-group mb-4">{inHandHistory.map(h => <li key={h.id} className="list-group-item"><strong>{findBookName(h.bookId)}</strong> (Due: {h.returnDate})</li>)}</ul>) : <p>No books currently in hand.</p>}
-                <hr />
-                <h5>Returned Books History</h5>
-                {returnedHistory.length > 0 ? (<ul className="list-group">{returnedHistory.map(h => <li key={h.id} className="list-group-item"><strong>{findBookName(h.bookId)}</strong> (Returned on: {h.returnedOn})</li>)}</ul>) : <p>No returned books in history.</p>}
-            </div>
-        );
-    };
-
-    const EditMemberForm = ({ member, onSave, onCancel }) => {
-        const [formData, setFormData] = useState(member || { name: '', registerNumber: '', class: '' });
-        return (
-            <form onSubmit={(e) => { e.preventDefault(); onSave(formData); }}>
-                <div className="mb-3"><label className="form-label">Name</label><input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="form-control" required/></div>
-                <div className="mb-3"><label className="form-label">Register Number</label><input type="text" value={formData.registerNumber} onChange={e => setFormData({ ...formData, registerNumber: e.target.value })} className="form-control" required/></div>
-                <div className="mb-3"><label className="form-label">Class</label><input type="text" value={formData.class} onChange={e => setFormData({ ...formData, class: e.target.value })} className="form-control" required/></div>
-                <button type="submit" className="btn btn-success me-2">Save</button>
-                <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
-            </form>
-        );
-    };
-
     return (
         <div className="card">
             <div className="card-header d-flex justify-content-between align-items-center">
-                <span>Manage Members</span>
+                <span>Students in "{className}"</span>
                 <div>
-                    <button className="btn btn-info btn-sm me-2" onClick={() => document.getElementById('member-importer').click()}><i className="fas fa-file-excel me-1"></i> Import</button>
-                    <input type="file" id="member-importer" style={{display: 'none'}} accept=".xlsx, .xls" onChange={handleFileImport} />
-                    <button className="btn btn-primary btn-sm" onClick={() => setEditingMember({})}><i className="fas fa-plus me-1"></i> Add New</button>
+                    <button className="btn btn-info btn-sm me-2" onClick={() => document.getElementById('student-importer').click()}><i className="fas fa-file-excel me-1"></i> Import</button>
+                    <input type="file" id="student-importer" style={{display: 'none'}} accept=".xlsx, .xls" onChange={handleFileImport} />
+                    <button className="btn btn-primary btn-sm me-2" onClick={() => onEditStudent({ class: className })}><i className="fas fa-plus me-1"></i> Add Student</button>
+                    <button className="btn btn-secondary btn-sm" onClick={onBack}>&larr; Back to Classes</button>
                 </div>
             </div>
             <div className="card-body">
-                <div className="table-responsive">
-                    <table className="table table-hover align-middle">
-                        <thead><tr><th>Name</th><th>Register Number</th><th>Class</th><th className="text-end">Actions</th></tr></thead>
-                        <tbody>{sortedMembers.map(member => (
-                            <tr key={member.id}>
-                                <td>{member.name}</td>
-                                <td>{member.registerNumber}</td>
-                                <td>{member.class}</td>
+                <table className="table table-hover align-middle">
+                    <thead><tr><th>Name</th><th>Register Number</th><th className="text-end">Actions</th></tr></thead>
+                    <tbody>
+                        {studentsInClass.map(student => (
+                            <tr key={student.id}>
+                                <td>{student.name}</td>
+                                <td>{student.registerNumber}</td>
                                 <td className="text-end">
-                                    <button className="btn btn-sm btn-outline-secondary me-2" onClick={() => setViewingMember(member)} title="View History"><i className="fas fa-history"></i></button>
-                                    <button className="btn btn-sm btn-outline-primary me-2" onClick={() => setEditingMember(member)} title="Edit Member"><i className="fas fa-pencil-alt"></i></button>
-                                    <button className="btn btn-sm btn-outline-danger" onClick={() => {if(window.confirm('Are you sure?')) deleteMember(member.id)}} title="Delete Member"><i className="fas fa-trash"></i></button>
+                                    <button className="btn btn-sm btn-outline-primary me-2" onClick={() => onEditStudent(student)} title="Edit Student"><i className="fas fa-pencil-alt"></i></button>
+                                    <button className="btn btn-sm btn-outline-danger" onClick={() => {if(window.confirm('Are you sure?')) deleteMember(student.id)}} title="Delete Student"><i className="fas fa-trash"></i></button>
                                 </td>
                             </tr>
-                        ))}</tbody>
-                    </table>
-                </div>
+                        ))}
+                    </tbody>
+                </table>
             </div>
-            {viewingMember && <Modal title={`History for ${viewingMember.name}`} onClose={() => setViewingMember(null)}><MemberHistory member={viewingMember} /></Modal>}
-            {editingMember && <Modal title={editingMember.id ? 'Edit Member' : 'Add New Member'} onClose={() => setEditingMember(null)}><EditMemberForm member={editingMember} onSave={editingMember.id ? updateMember : addMember} onCancel={() => setEditingMember(null)} /></Modal>}
         </div>
     );
 }
 
 // --- Book & Category Management Tab Component ---
-function BookAndCategoryManagement() {
-    const { books, categories, addBook, updateBook, deleteBook, addCategory, deleteCategory, addMultipleBooks } = useData();
+function BookAndCategoryManagement({ onEditBook }) {
+    const { categories, addCategory, deleteCategory } = useData();
     const [view, setView] = useState('categories');
     const [selectedCategory, setSelectedCategory] = useState('');
-    const [editingItem, setEditingItem] = useState(null);
+    const [editingCategory, setEditingCategory] = useState(null);
 
     const naturalSort = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
     
@@ -410,7 +429,42 @@ function BookAndCategoryManagement() {
     [categories]);
 
     const handleSelectCategory = (cat) => { setSelectedCategory(cat); setView('books'); };
+
+    if (view === 'books') {
+        return <BookList category={selectedCategory} onBack={() => setView('categories')} onEditBook={onEditBook} />;
+    }
+
+    return (
+        <div className="card">
+            <div className="card-header">Manage Categories</div>
+            <div className="card-body">
+                <form className="d-flex mb-3" onSubmit={e => { e.preventDefault(); if(editingCategory) addCategory(editingCategory); setEditingCategory(null); }}>
+                    <input type="text" className="form-control me-2" placeholder="New category name" value={editingCategory || ''} onChange={e => setEditingCategory(e.target.value)} />
+                    <button className="btn btn-primary" type="submit">Add</button>
+                </form>
+                <ul className="list-group">{sortedCategories.map(cat => (
+                    <li key={cat} className="list-group-item d-flex justify-content-between align-items-center">
+                        <a href="#!" onClick={(e) => { e.preventDefault(); handleSelectCategory(cat); }}>{cat}</a>
+                        <div>
+                            <button className="btn btn-outline-primary btn-sm me-2" onClick={() => handleSelectCategory(cat)} title="View Books"><i className="fas fa-folder-open"></i></button>
+                            <button className="btn btn-outline-danger btn-sm" onClick={() => {if(window.confirm(`WARNING: This will delete the category AND all books within it. Are you sure?`)) deleteCategory(cat)}} title="Delete Category"><i className="fas fa-trash"></i></button>
+                        </div>
+                    </li>
+                ))}</ul>
+            </div>
+        </div>
+    );
+}
+
+// --- BookList (Sub-component for BookAndCategoryManagement) ---
+function BookList({ category, onBack, onEditBook }) {
+    const { books, deleteBook, addMultipleBooks } = useData();
     
+    const booksInCategory = useMemo(() => 
+        books.filter(b => b.category === category)
+             .sort((a, b) => (a.bookNo || '').localeCompare(b.bookNo || '', undefined, { numeric: true, sensitivity: 'base' })),
+    [books, category]);
+
     const handleFileImport = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -421,8 +475,8 @@ function BookAndCategoryManagement() {
             const wsname = wb.SheetNames[0];
             const ws = wb.Sheets[wsname];
             const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
-            const newBooks = data.slice(1).map(row => ({ bookNo: row[0] || '', bookName: row[1] || '', author: row[2] || '', publisher: row[3] || '', category: selectedCategory })).filter(b => b.bookName);
-            if(newBooks.length > 0 && window.confirm(`Found ${newBooks.length} books. Import them into "${selectedCategory}"?`)){
+            const newBooks = data.slice(1).map(row => ({ bookNo: row[0] || '', bookName: row[1] || '', author: row[2] || '', publisher: row[3] || '', category })).filter(b => b.bookName);
+            if(newBooks.length > 0 && window.confirm(`Found ${newBooks.length} books. Import them into "${category}"?`)){
                 addMultipleBooks(newBooks);
                 alert("Books imported successfully!");
             } else {
@@ -432,82 +486,35 @@ function BookAndCategoryManagement() {
         reader.readAsBinaryString(file);
         e.target.value = '';
     };
-    
-    const EditBookForm = ({ book, onSave, onCancel }) => {
-        const [formData, setFormData] = useState(book);
-        return (
-            <form onSubmit={e => {e.preventDefault(); onSave(formData)}}>
-                <div className="row">
-                    <div className="col-md-3 mb-3"><label className="form-label">Book No</label><input type="text" value={formData.bookNo} onChange={e => setFormData({...formData, bookNo: e.target.value})} className="form-control" required /></div>
-                    <div className="col-md-9 mb-3"><label className="form-label">Book Name</label><input type="text" value={formData.bookName} onChange={e => setFormData({...formData, bookName: e.target.value})} className="form-control" required /></div>
-                </div>
-                <div className="row">
-                    <div className="col-md-6 mb-3"><label className="form-label">Author</label><input type="text" value={formData.author} onChange={e => setFormData({...formData, author: e.target.value})} className="form-control" /></div>
-                    <div className="col-md-6 mb-3"><label className="form-label">Publisher</label><input type="text" value={formData.publisher} onChange={e => setFormData({...formData, publisher: e.target.value})} className="form-control" /></div>
-                </div>
-                <button type="submit" className="btn btn-success me-2">Save</button>
-                <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
-            </form>
-        );
-    };
-
-    if (view === 'books') {
-        const booksInCategory = books.filter(b => b.category === selectedCategory);
-        const sortedBooks = booksInCategory.sort((a, b) => 
-            (a.bookNo || '').localeCompare(b.bookNo || '', undefined, { numeric: true, sensitivity: 'base' })
-        );
-
-        return (
-            <div className="card">
-                <div className="card-header d-flex justify-content-between align-items-center">
-                    <span>Books in "{selectedCategory}"</span>
-                    <button className="btn btn-secondary btn-sm" onClick={() => setView('categories')}>&larr; Back to Categories</button>
-                </div>
-                <div className="card-body">
-                    <div className="table-responsive">
-                        <table className="table table-hover align-middle">
-                            <thead><tr><th>Book No</th><th>Name</th><th>Author</th><th>Status</th>
-                                <th className="text-end">
-                                    <button className="btn btn-info btn-sm me-2" onClick={() => document.getElementById('book-importer').click()} title="Import from Excel"><i className="fas fa-file-excel"></i></button>
-                                    <input type="file" id="book-importer" style={{display: 'none'}} accept=".xlsx, .xls" onChange={handleFileImport} />
-                                    <button className="btn btn-primary btn-sm" onClick={() => setEditingItem({ bookNo: '', bookName: '', author: '', publisher: '', category: selectedCategory })} title="Add New Book"><i className="fas fa-plus"></i></button>
-                                </th>
-                            </tr></thead>
-                            <tbody>{sortedBooks.map(book => (
-                                <tr key={book.id}>
-                                    <td>{book.bookNo}</td><td>{book.bookName}</td><td>{book.author}</td>
-                                    <td><span className={`badge text-bg-${book.available ? 'success' : 'warning'}`}>{book.available ? 'Available' : 'Issued'}</span></td>
-                                    <td className="text-end">
-                                        <button className="btn btn-sm btn-outline-primary me-2" onClick={() => setEditingItem(book)} title="Edit Book"><i className="fas fa-pencil-alt"></i></button>
-                                        <button className="btn btn-sm btn-outline-danger" onClick={() => {if(window.confirm('Are you sure?')) deleteBook(book.id)}} title="Delete Book"><i className="fas fa-trash"></i></button>
-                                    </td>
-                                </tr>
-                            ))}</tbody>
-                        </table>
-                    </div>
-                    {editingItem && <Modal title={editingItem.id ? 'Edit Book' : 'Add Book'} onClose={() => setEditingItem(null)}><EditBookForm book={editingItem} onSave={editingItem.id ? updateBook : addBook} onCancel={() => setEditingItem(null)} /></Modal>}
-                </div>
-            </div>
-        );
-    }
 
     return (
         <div className="card">
-            <div className="card-header">Manage Categories</div>
+            <div className="card-header d-flex justify-content-between align-items-center">
+                <span>Books in "{category}"</span>
+                <button className="btn btn-secondary btn-sm" onClick={onBack}>&larr; Back to Categories</button>
+            </div>
             <div className="card-body">
-                <form className="d-flex mb-3" onSubmit={e => { e.preventDefault(); if(editingItem) addCategory(editingItem); setEditingItem(null); }}>
-                    <input type="text" className="form-control me-2" placeholder="New category name" value={editingItem || ''} onChange={e => setEditingItem(e.target.value)} />
-                    <button className="btn btn-primary" type="submit">Add</button>
-                </form>
-                <ul className="list-group">{sortedCategories.map(cat => (
-                    <li key={cat} className="list-group-item d-flex justify-content-between align-items-center">
-                        <a href="#!" onClick={(e) => { e.preventDefault(); handleSelectCategory(cat); }}>{cat}</a>
-                        <div>
-                            <button className="btn btn-outline-primary btn-sm me-2" onClick={() => handleSelectCategory(cat)} title="View Books"><i className="fas fa-folder-open"></i></button>
-                            <button className="btn btn-outline-danger btn-sm" onClick={() => {if(window.confirm('WARNING: This will delete the category AND all books within it. Are you sure?')) deleteCategory(cat)}} title="Delete Category"><i className="fas fa-trash"></i></button>
-                        </div>
-                    </li>
-                ))}</ul>
+                <div className="table-responsive">
+                    <table className="table table-hover align-middle">
+                        <thead><tr><th>Book No</th><th>Name</th><th>Author</th><th>Status</th>
+                            <th className="text-end">
+                                <button className="btn btn-info btn-sm me-2" onClick={() => document.getElementById('book-importer').click()} title="Import from Excel"><i className="fas fa-file-excel"></i></button>
+                                <input type="file" id="book-importer" style={{display: 'none'}} accept=".xlsx, .xls" onChange={handleFileImport} />
+                                <button className="btn btn-primary btn-sm" onClick={() => onEditBook({ bookNo: '', bookName: '', author: '', publisher: '', category })} title="Add New Book"><i className="fas fa-plus"></i></button>
+                            </th>
+                        </tr></thead>
+                        <tbody>{booksInCategory.map(book => (
+                            <tr key={book.id}>
+                                <td>{book.bookNo}</td><td>{book.bookName}</td><td>{book.author}</td>
+                                <td><span className={`badge text-bg-${book.available ? 'success' : 'warning'}`}>{book.available ? 'Available' : 'Issued'}</span></td>
+                                <td className="text-end">
+                                    <button className="btn btn-sm btn-outline-primary me-2" onClick={() => onEditBook(book)} title="Edit Book"><i className="fas fa-pencil-alt"></i></button>
+                                    <button className="btn btn-sm btn-outline-danger" onClick={() => {if(window.confirm('Are you sure?')) deleteBook(book.id)}} title="Delete Book"><i className="fas fa-trash"></i></button>
+                                </td>
+                            </tr>
+                        ))}</tbody>
+                    </table>
+                </div>
             </div>
         </div>
     );
@@ -515,11 +522,12 @@ function BookAndCategoryManagement() {
 
 // --- Main Admin Page Component ---
 export default function AdminPage() {
-    const { loading, addBook, updateBook, addMember, updateMember } = useData();
+    const { loading, addBook, updateBook, addMember, updateMember, addClass, updateClass } = useData();
     const [activeTab, setActiveTab] = useState('dashboard');
     const [editingMember, setEditingMember] = useState(null);
     const [viewingMember, setViewingMember] = useState(null);
     const [editingBook, setEditingBook] = useState(null);
+    const [editingClass, setEditingClass] = useState(null);
 
     const EditBookForm = ({ book, onSave, onCancel }) => {
         const [formData, setFormData] = useState(book);
@@ -545,7 +553,27 @@ export default function AdminPage() {
             <form onSubmit={(e) => { e.preventDefault(); onSave(formData); }}>
                 <div className="mb-3"><label className="form-label">Name</label><input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="form-control" required/></div>
                 <div className="mb-3"><label className="form-label">Register Number</label><input type="text" value={formData.registerNumber} onChange={e => setFormData({ ...formData, registerNumber: e.target.value })} className="form-control" required/></div>
-                <div className="mb-3"><label className="form-label">Class</label><input type="text" value={formData.class} onChange={e => setFormData({ ...formData, class: e.target.value })} className="form-control" required/></div>
+                <div className="mb-3"><label className="form-label">Class</label><input type="text" value={formData.class} className="form-control" disabled readOnly/></div>
+                <button type="submit" className="btn btn-success me-2">Save</button>
+                <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+            </form>
+        );
+    };
+
+    const EditClassForm = ({ classData, onSave, onCancel }) => {
+        const [name, setName] = useState(classData.name || '');
+        const handleSubmit = (e) => {
+            e.preventDefault();
+            if (classData.isNew) {
+                addClass(name);
+            } else {
+                updateClass(classData.name, name);
+            }
+            onSave();
+        };
+        return (
+            <form onSubmit={handleSubmit}>
+                <div className="mb-3"><label className="form-label">Class Name</label><input type="text" value={name} onChange={e => setName(e.target.value)} className="form-control" required/></div>
                 <button type="submit" className="btn btn-success me-2">Save</button>
                 <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
             </form>
@@ -585,13 +613,14 @@ export default function AdminPage() {
             
             {activeTab === 'dashboard' && <Dashboard />}
             {activeTab === 'manageBooks' && <BookAndCategoryManagement onEditBook={setEditingBook} />}
-            {activeTab === 'manageMembers' && <MemberManagement onEditMember={setEditingMember} onViewHistory={setViewingMember} />}
+            {activeTab === 'manageMembers' && <MemberManagement onEditMember={setEditingMember} onViewHistory={setViewingMember} onEditClass={setEditingClass} />}
             {activeTab === 'issueReturn' && <IssueReturn />}
             {activeTab === 'issuedBooks' && <IssuedBooks />}
 
             {viewingMember && <Modal title={`History for ${viewingMember.name}`} onClose={() => setViewingMember(null)}><MemberHistory member={viewingMember} books={books} issueHistory={issueHistory} /></Modal>}
-            {editingMember && <Modal title={editingMember.id ? 'Edit Member' : 'Add New Member'} onClose={() => setEditingMember(null)}><EditMemberForm member={editingMember} onSave={editingMember.id ? updateMember : addMember} onCancel={() => setEditingMember(null)} /></Modal>}
+            {editingMember && <Modal title={editingMember.id ? 'Edit Student' : 'Add New Student'} onClose={() => setEditingMember(null)}><EditMemberForm member={editingMember} onSave={() => setEditingMember(null)} onCancel={() => setEditingMember(null)} /></Modal>}
             {editingBook && <Modal title={editingBook.id ? 'Edit Book' : 'Add Book'} onClose={() => setEditingBook(null)}><EditBookForm book={editingBook} onSave={editingBook.id ? updateBook : addBook} onCancel={() => setEditingBook(null)} /></Modal>}
+            {editingClass && <Modal title={editingClass.isNew ? "Add New Class" : `Edit Class "${editingClass.name}"`} onClose={() => setEditingClass(null)}><EditClassForm classData={editingClass} onSave={() => setEditingClass(null)} onCancel={() => setEditingClass(null)} /></Modal>}
         </div>
     );
 }
