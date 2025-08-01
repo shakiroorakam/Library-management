@@ -8,6 +8,7 @@ export const DataContext = createContext();
 const generateId = () => `id_${new Date().getTime()}_${Math.random().toString(36).substr(2, 9)}`;
 
 export const DataProvider = ({ children }) => {
+    // --- State Management ---
     const [books, setBooks] = useState(() => JSON.parse(localStorage.getItem('library_books')) || []);
     const [members, setMembers] = useState(() => JSON.parse(localStorage.getItem('library_members')) || []);
     const [categories, setCategories] = useState(() => JSON.parse(localStorage.getItem('library_categories')) || []);
@@ -15,69 +16,91 @@ export const DataProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
 
+    // --- Core Offline & Sync Logic ---
     useEffect(() => {
         const handleOnline = () => setIsOnline(true);
         const handleOffline = () => setIsOnline(false);
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
 
-        setLoading(false); // Display local data instantly
+        // Load local data instantly
+        setLoading(false);
 
+        // If online, sync local changes up, then listen for new changes.
         if (isOnline && db) {
-            const unsubBooks = onSnapshot(collection(db, "books"), snap => {
-                updateLocalStorageAndState('books', snap.docs.map(d => d.data()), setBooks);
-            });
-            const unsubMembers = onSnapshot(collection(db, "members"), snap => {
-                updateLocalStorageAndState('members', snap.docs.map(d => d.data()), setMembers);
-            });
-            const unsubCategories = onSnapshot(doc(db, "library", "categories"), docSnap => {
-                if (docSnap.exists()) {
-                    updateLocalStorageAndState('categories', docSnap.data().list || [], setCategories);
+            const syncAndListen = async () => {
+                // 1. Sync local changes UP to Firebase if needed
+                if (localStorage.getItem('needsSync') === 'true') {
+                    console.log("Connection restored. Syncing local changes to Firebase...");
+                    await syncAllLocalDataToFirebase();
+                    localStorage.setItem('needsSync', 'false');
+                    console.log("Sync complete.");
                 }
-            });
-            const unsubHistory = onSnapshot(doc(db, "library", "history"), docSnap => {
-                if (docSnap.exists()) {
-                    updateLocalStorageAndState('history', docSnap.data().log || [], setIssueHistory);
-                }
-            });
-            return () => { 
-                unsubBooks(); 
-                unsubMembers(); 
-                unsubCategories(); 
-                unsubHistory();
-                window.removeEventListener('online', handleOnline);
-                window.removeEventListener('offline', handleOffline);
+
+                // 2. Now, listen for real-time updates from Firebase
+                const unsubBooks = onSnapshot(collection(db, "books"), snap => updateLocalStorageAndState('books', snap.docs.map(d => d.data()), setBooks));
+                const unsubMembers = onSnapshot(collection(db, "members"), snap => updateLocalStorageAndState('members', snap.docs.map(d => d.data()), setMembers));
+                const unsubCategories = onSnapshot(doc(db, "library", "categories"), docSnap => { if (docSnap.exists()) updateLocalStorageAndState('categories', docSnap.data().list || [], setCategories); });
+                const unsubHistory = onSnapshot(doc(db, "library", "history"), docSnap => { if (docSnap.exists()) updateLocalStorageAndState('history', docSnap.data().log || [], setIssueHistory); });
+                
+                return () => { unsubBooks(); unsubMembers(); unsubCategories(); unsubHistory(); };
             };
+            
+            syncAndListen();
         }
+        
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
     }, [isOnline]);
 
+    // --- Helper Functions ---
     const updateLocalStorageAndState = (key, data, setter) => {
         setter(data);
         localStorage.setItem(`library_${key}`, JSON.stringify(data));
     };
+
+    const syncAllLocalDataToFirebase = async () => {
+        if (!db) return;
+        const batch = writeBatch(db);
+        
+        // Batch write all local data to Firebase
+        books.forEach(book => batch.set(doc(db, "books", book.id), book));
+        members.forEach(member => batch.set(doc(db, "members", member.id), member));
+        batch.set(doc(db, "library", "categories"), { list: categories });
+        batch.set(doc(db, "library", "history"), { log: issueHistory });
+
+        await batch.commit();
+    };
     
-    const syncDoc = (collectionName, docId, data) => {
-        if (isOnline && db) setDoc(doc(db, collectionName, docId), data, { merge: true });
+    const handleDataChange = (key, data, setter, docInfo) => {
+        updateLocalStorageAndState(key, data, setter);
+        if (isOnline && db) {
+            if (docInfo) { // For single doc operations like add/update
+                setDoc(doc(db, docInfo.collection, docInfo.id), docInfo.data, { merge: true });
+            }
+        } else {
+            localStorage.setItem('needsSync', 'true');
+        }
     };
 
-    // --- Book Functions ---
+    // --- Data Modification Functions ---
     const addBook = (bookData) => {
-        const newBook = { ...bookData, id: generateId(), available: true, issuedTo: null, bookName: bookData.bookName };
-        const newBooks = [...books, newBook];
-        updateLocalStorageAndState('books', newBooks, setBooks);
-        syncDoc("books", newBook.id, newBook);
+        const newBook = { ...bookData, id: generateId(), available: true, issuedTo: null };
+        handleDataChange('books', [...books, newBook], setBooks, { collection: 'books', id: newBook.id, data: newBook });
     };
 
     const updateBook = (updatedBook) => {
         const newBooks = books.map(b => b.id === updatedBook.id ? updatedBook : b);
-        updateLocalStorageAndState('books', newBooks, setBooks);
-        syncDoc("books", updatedBook.id, updatedBook);
+        handleDataChange('books', newBooks, setBooks, { collection: 'books', id: updatedBook.id, data: updatedBook });
     };
 
     const deleteBook = (bookId) => {
         const newBooks = books.filter(b => b.id !== bookId);
         updateLocalStorageAndState('books', newBooks, setBooks);
         if (isOnline && db) deleteDoc(doc(db, "books", bookId));
+        else localStorage.setItem('needsSync', 'true');
     };
 
     const addMultipleBooks = (bookList) => {
@@ -88,10 +111,11 @@ export const DataProvider = ({ children }) => {
             const batch = writeBatch(db);
             newBooks.forEach(book => batch.set(doc(db, "books", book.id), book));
             batch.commit();
+        } else {
+            localStorage.setItem('needsSync', 'true');
         }
     };
 
-    // --- Issue/Return/Reissue Functions ---
     const issueBook = (bookId, memberId) => {
         const today = new Date();
         const returnDate = new Date();
@@ -99,115 +123,76 @@ export const DataProvider = ({ children }) => {
         const issuedDateStr = today.toISOString().slice(0,10);
         const returnDateStr = returnDate.toISOString().slice(0,10);
 
-        const newBooks = books.map(book => 
-            book.id === bookId 
-            ? { ...book, available: false, issuedTo: memberId, issuedDate: issuedDateStr, returnDate: returnDateStr } 
-            : book
-        );
-        updateLocalStorageAndState('books', newBooks, setBooks);
+        const newBooks = books.map(book => book.id === bookId ? { ...book, available: false, issuedTo: memberId, issuedDate: issuedDateStr, returnDate: returnDateStr } : book);
         const issuedBook = newBooks.find(b => b.id === bookId);
-        if (issuedBook) syncDoc("books", bookId, issuedBook);
+        handleDataChange('books', newBooks, setBooks, { collection: 'books', id: bookId, data: issuedBook });
 
         const historyEntry = { id: generateId(), bookId, memberId, issuedDate: issuedDateStr, returnDate: returnDateStr, status: 'in-hand', returnedOn: null };
         const newHistory = [...issueHistory, historyEntry];
-        updateLocalStorageAndState('history', newHistory, setIssueHistory);
-        if (isOnline && db) setDoc(doc(db, "library", "history"), { log: newHistory });
+        handleDataChange('history', newHistory, setIssueHistory, { collection: 'library', id: 'history', data: { log: newHistory } });
     };
 
     const returnBook = (bookId) => {
-        const newBooks = books.map(book => 
-            book.id === bookId 
-            ? { ...book, available: true, issuedTo: null, issuedDate: null, returnDate: null } 
-            : book
-        );
-        updateLocalStorageAndState('books', newBooks, setBooks);
+        const newBooks = books.map(book => book.id === bookId ? { ...book, available: true, issuedTo: null, issuedDate: null, returnDate: null } : book);
         const returnedBook = newBooks.find(b => b.id === bookId);
-        if (returnedBook) syncDoc("books", bookId, returnedBook);
+        handleDataChange('books', newBooks, setBooks, { collection: 'books', id: bookId, data: returnedBook });
 
         const today = new Date().toISOString().slice(0,10);
-        const newHistory = issueHistory.map(entry => 
-            (entry.bookId === bookId && entry.status === 'in-hand') 
-            ? { ...entry, status: 'returned', returnedOn: today } 
-            : entry
-        );
-        updateLocalStorageAndState('history', newHistory, setIssueHistory);
-        if (isOnline && db) setDoc(doc(db, "library", "history"), { log: newHistory });
+        const newHistory = issueHistory.map(entry => (entry.bookId === bookId && entry.status === 'in-hand') ? { ...entry, status: 'returned', returnedOn: today } : entry);
+        handleDataChange('history', newHistory, setIssueHistory, { collection: 'library', id: 'history', data: { log: newHistory } });
     };
     
     const reissueBook = (bookId) => {
-        const today = new Date();
         const newReturnDate = new Date();
-        newReturnDate.setDate(today.getDate() + 14);
+        newReturnDate.setDate(newReturnDate.getDate() + 14);
         const newReturnDateStr = newReturnDate.toISOString().slice(0, 10);
 
-        const newBooks = books.map(book =>
-            book.id === bookId
-            ? { ...book, returnDate: newReturnDateStr }
-            : book
-        );
-        updateLocalStorageAndState('books', newBooks, setBooks);
+        const newBooks = books.map(book => book.id === bookId ? { ...book, returnDate: newReturnDateStr } : book);
         const reissuedBook = newBooks.find(b => b.id === bookId);
-        if (reissuedBook) syncDoc("books", bookId, reissuedBook);
+        handleDataChange('books', newBooks, setBooks, { collection: 'books', id: bookId, data: reissuedBook });
 
-        const newHistory = issueHistory.map(entry =>
-            (entry.bookId === bookId && entry.status === 'in-hand')
-            ? { ...entry, returnDate: newReturnDateStr }
-            : entry
-        );
-        updateLocalStorageAndState('history', newHistory, setIssueHistory);
-        if (isOnline && db) setDoc(doc(db, "library", "history"), { log: newHistory });
+        const newHistory = issueHistory.map(entry => (entry.bookId === bookId && entry.status === 'in-hand') ? { ...entry, returnDate: newReturnDateStr } : entry);
+        handleDataChange('history', newHistory, setIssueHistory, { collection: 'library', id: 'history', data: { log: newHistory } });
     };
 
-    // --- Category Functions ---
     const addCategory = (name) => {
         const newCategories = [...categories, name];
-        updateLocalStorageAndState('categories', newCategories, setCategories);
-        if (isOnline && db) setDoc(doc(db, "library", "categories"), { list: newCategories });
+        handleDataChange('categories', newCategories, setCategories, { collection: 'library', id: 'categories', data: { list: newCategories } });
     };
 
     const deleteCategory = (name) => {
-        // Find all books in this category
         const booksToDelete = books.filter(b => b.category === name);
-        // Create a new list of books excluding the ones to be deleted
         const remainingBooks = books.filter(b => b.category !== name);
-        // Create a new list of categories excluding the one to be deleted
         const newCategories = categories.filter(c => c !== name);
 
-        // Update local state and storage
         updateLocalStorageAndState('books', remainingBooks, setBooks);
         updateLocalStorageAndState('categories', newCategories, setCategories);
 
-        // Sync with Firebase
         if (isOnline && db) {
             const batch = writeBatch(db);
-            // Delete all the books in the category
-            booksToDelete.forEach(book => {
-                batch.delete(doc(db, "books", book.id));
-            });
-            // Update the categories document
+            booksToDelete.forEach(book => batch.delete(doc(db, "books", book.id)));
             batch.set(doc(db, "library", "categories"), { list: newCategories });
             batch.commit();
+        } else {
+            localStorage.setItem('needsSync', 'true');
         }
     };
 
-    // --- Member Functions ---
     const addMember = (memberData) => {
         const newMember = { ...memberData, id: generateId(), joinDate: new Date().toISOString().slice(0, 10) };
-        const newMembers = [...members, newMember];
-        updateLocalStorageAndState('members', newMembers, setMembers);
-        syncDoc("members", newMember.id, newMember);
+        handleDataChange('members', [...members, newMember], setMembers, { collection: 'members', id: newMember.id, data: newMember });
     };
     
     const updateMember = (updatedMember) => {
         const newMembers = members.map(m => m.id === updatedMember.id ? updatedMember : m);
-        updateLocalStorageAndState('members', newMembers, setMembers);
-        syncDoc("members", updatedMember.id, updatedMember);
+        handleDataChange('members', newMembers, setMembers, { collection: 'members', id: updatedMember.id, data: updatedMember });
     };
 
     const deleteMember = (memberId) => {
         const newMembers = members.filter(m => m.id !== memberId);
         updateLocalStorageAndState('members', newMembers, setMembers);
         if (isOnline && db) deleteDoc(doc(db, "members", memberId));
+        else localStorage.setItem('needsSync', 'true');
     };
 
     const addMultipleMembers = (memberList) => {
@@ -218,6 +203,8 @@ export const DataProvider = ({ children }) => {
             const batch = writeBatch(db);
             newMembers.forEach(member => batch.set(doc(db, "members", member.id), member));
             batch.commit();
+        } else {
+            localStorage.setItem('needsSync', 'true');
         }
     };
 
