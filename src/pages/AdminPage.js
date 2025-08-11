@@ -320,7 +320,7 @@ function MemberManagement({ onEditMember, onViewHistory, onEditClass }) {
     };
 
     if (view === 'students') {
-        return <StudentManagement className={selectedClass} onBack={() => setView('classes')} onEditStudent={onEditMember} />;
+        return <StudentManagement className={selectedClass} onBack={() => setView('classes')} onEditStudent={onEditMember} onViewHistory={onViewHistory} />;
     }
 
     return <ClassManagement onSelectClass={handleSelectClass} onEditClass={onEditClass} />;
@@ -356,7 +356,7 @@ function ClassManagement({ onSelectClass, onEditClass }) {
 }
 
 // --- Student Management Component ---
-function StudentManagement({ className, onBack, onEditStudent }) {
+function StudentManagement({ className, onBack, onEditStudent, onViewHistory }) {
     const { members, deleteMember, addMultipleMembers } = useData();
     const studentsInClass = useMemo(() => members.filter(m => m.class === className), [members, className]);
 
@@ -398,6 +398,7 @@ function StudentManagement({ className, onBack, onEditStudent }) {
                                 <td>{student.name}</td>
                                 <td>{student.registerNumber}</td>
                                 <td className="text-end">
+                                    <button className="btn btn-sm btn-outline-secondary me-2" onClick={() => onViewHistory(student)} title="View History"><i className="fas fa-history"></i></button>
                                     <button className="btn btn-sm btn-outline-primary me-2" onClick={() => onEditStudent(student)} title="Edit Student"><i className="fas fa-pencil-alt"></i></button>
                                     <button className="btn btn-sm btn-outline-danger" onClick={() => {if(window.confirm('Are you sure?')) deleteMember(student.id)}} title="Delete Student"><i className="fas fa-trash"></i></button>
                                 </td>
