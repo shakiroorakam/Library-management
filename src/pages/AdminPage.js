@@ -204,12 +204,7 @@ function IssueReturn() {
     const [selectedReturnBook, setSelectedReturnBook] = useState(null);
 
     const filteredAvailableBooks = useMemo(() => books.filter(b => b.available && (b.bookName.toLowerCase().includes(issueBookSearch.toLowerCase()) || String(b.bookNo).toLowerCase().includes(issueBookSearch.toLowerCase()))), [books, issueBookSearch]);
-    
-    const filteredMembers = useMemo(() => members.filter(m => 
-        m.name.toLowerCase().includes(issueMemberSearch.toLowerCase()) || 
-        (m.registerNumber && m.registerNumber.toLowerCase().includes(issueMemberSearch.toLowerCase()))
-    ), [members, issueMemberSearch]);
-
+    const filteredMembers = useMemo(() => members.filter(m => m.name.toLowerCase().includes(issueMemberSearch.toLowerCase()) || (m.registerNumber && m.registerNumber.toLowerCase().includes(issueMemberSearch.toLowerCase()))), [members, issueMemberSearch]);
     const filteredIssuedBooks = useMemo(() => books.filter(b => {
         if (b.available) return false;
         const member = members.find(m => m.id === b.issuedTo);
